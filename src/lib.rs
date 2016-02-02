@@ -31,7 +31,7 @@ fn check_ptr<V>(a: *mut V, b: *mut V) {
 
 #[inline]
 unsafe fn from_ptr<'q, V>(a: *mut V) -> Option<&'q mut V> {
-    if a == null_mut() { None } else { Some(std::mem::transmute(a)) }
+    if a == null_mut() { None } else { Some(&mut *a) }
 }
 
 /// Just add `use splitmut::SplitMut;` to have these methods working on
@@ -101,7 +101,7 @@ pub trait SplitMut<K, V> {
     /// You have been warned.
     unsafe fn get2_unchecked_mut(&mut self, k1: K, k2: K) -> (&mut V, &mut V) {
         let p2 = self.get1_unchecked_mut(k2) as *mut V;
-        (self.get1_unchecked_mut(k1), std::mem::transmute(p2))
+        (self.get1_unchecked_mut(k1), &mut *p2)
     }
 
     /// Returns three mutable references to three distinct values within
@@ -114,7 +114,7 @@ pub trait SplitMut<K, V> {
     unsafe fn get3_unchecked_mut(&mut self, k1: K, k2: K, k3: K) -> (&mut V, &mut V, &mut V) {
         let p2 = self.get1_unchecked_mut(k2) as *mut V;
         let p3 = self.get1_unchecked_mut(k3) as *mut V;
-        (self.get1_unchecked_mut(k1), std::mem::transmute(p2), std::mem::transmute(p3))
+        (self.get1_unchecked_mut(k1), &mut *p2, &mut *p3)
     }
 
     /// Returns four mutable references to four distinct values within
@@ -128,7 +128,7 @@ pub trait SplitMut<K, V> {
         let p2 = self.get1_unchecked_mut(k2) as *mut V;
         let p3 = self.get1_unchecked_mut(k3) as *mut V;
         let p4 = self.get1_unchecked_mut(k4) as *mut V;
-        (self.get1_unchecked_mut(k1), std::mem::transmute(p2), std::mem::transmute(p3), std::mem::transmute(p4))
+        (self.get1_unchecked_mut(k1), &mut *p2, &mut *p3, &mut *p4)
     }
 }
 
