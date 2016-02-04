@@ -1,9 +1,14 @@
-//! SplitMut - a crate for retreiving multiple mutable values within the same collection
+//! SplitMut - a crate for safely retreiving multiple mutable values within the same collection.
+//!
+//! `get2_mut`, `get3_mut` and `get4_mut` returns a tuple or 2, 3 or 4 values, each one of them being
+//! either `Ok(&mut V)`, `Err(SplitMutError::NoValue)` in case there was no value for the key (i e, when
+//! your usual `get_mut` would have returned `None`), or `Err(SplitMutError::SameValue)` in case the same
+//! value has already been returned earlier in the tuple. 
 //!
 //! # Example
 //! ```
 //! use std::collections::HashMap;
-//! use splitmut::SplitMut;
+//! use splitmut::{SplitMut, SplitMutError};
 //! 
 //! // Create a hashmap
 //! let mut h = HashMap::new();
@@ -17,25 +22,74 @@
 //! }
 //! assert_eq!(h.get(&1), Some(&"world"));
 //! assert_eq!(h.get(&2), Some(&"Hello"));
+//!
+//! // Show error handling
+//! let (m0, m1a, m1b) = h.get3_mut(&0, &1, &1);
+//! // No value for the key "0"
+//! assert_eq!(m0, Err(SplitMutError::NoValue));
+//! // First value for the key "1" is returned successfully
+//! assert_eq!(m1a, Ok(&mut "world"));
+//! // Second value for the key "1" returns an error
+//! assert_eq!(m1b, Err(SplitMutError::SameValue));
 //! ```
+//!
 
-use std::ptr::null_mut;
+#![warn(missing_docs)]
+
 use std::collections::{HashMap, BTreeMap, VecDeque};
 
-#[inline]
-fn to_ptr<V>(s: Option<&mut V>) -> *mut V { s.map(|q| q as *mut V).unwrap_or(null_mut()) }
+/// Error returned from get*_mut functions.
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
+pub enum SplitMutError {
+    /// No value was found for the specified key (like when get_mut would return None)
+    NoValue,
+    /// The same value has already been returned (earlier in the same tuple)
+    SameValue,
+}
 
-fn check_ptr<V>(a: *mut V, b: *mut V) {
-    if a == b && a != null_mut() { panic!("SplitMut called with identical keys!"); }
+impl std::error::Error for SplitMutError {
+    fn description(&self) -> &'static str {
+         match self {
+              &SplitMutError::NoValue => "No value",
+              &SplitMutError::SameValue => "Duplicate values",
+         }
+    }
+}
+
+impl std::fmt::Display for SplitMutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+         use std::error::Error;
+         f.write_str(self.description())
+    }
+}
+
+// Used internally.
+type R<V> = Result<*mut V, SplitMutError>;
+
+#[inline]
+fn to_r<V>(s: Option<&mut V>) -> R<V> {
+    s.map(|s| s as *mut V).ok_or(SplitMutError::NoValue)
 }
 
 #[inline]
-unsafe fn from_ptr<'q, V>(a: *mut V) -> Option<&'q mut V> {
-    if a == null_mut() { None } else { Some(&mut *a) }
+fn check_r<V>(a: &R<V>, b: R<V>) -> R<V> {
+    match (a, &b) {
+        (&Ok(ref aa), &Ok(ref bb)) => if aa == bb { return Err(SplitMutError::SameValue) },
+        _ => {},
+    }
+    b
 }
+
+#[inline]
+unsafe fn from_r<'a, V>(a: R<V>) -> Result<&'a mut V, SplitMutError> { a.map(|aa| &mut *aa) } 
+
 
 /// Just add `use splitmut::SplitMut;` to have these methods working on
 /// mutable slices, Vec, VecDeque, HashMap and BTreeMap.
+///
+/// In case you want to implement `SplitMut` for your own collection, just
+/// implement `get1_mut` and `get1_unchecked_mut` and the other methods will
+/// be provided for you.
 pub trait SplitMut<K, V> {
     /// Wrapper for get_mut, used internally.
     fn get1_mut(&mut self, k1: K) -> Option<&mut V>;
@@ -48,48 +102,42 @@ pub trait SplitMut<K, V> {
 
     /// Returns two mutable references to two distinct values within
     /// the same collection.
-    /// 
-    /// # Panic
-    /// This function will panic if the two keys point to the same value.
-    fn get2_mut(&mut self, k1: K, k2: K) -> (Option<&mut V>, Option<&mut V>) {
-        let p1 = to_ptr(self.get1_mut(k1));
-        let p2 = to_ptr(self.get1_mut(k2));
-        check_ptr(p1, p2);
-        unsafe { (from_ptr(p1), from_ptr(p2)) }
+    fn get2_mut(&mut self, k1: K, k2: K) -> (Result<&mut V, SplitMutError>, Result<&mut V, SplitMutError>) {
+        let p1 = to_r(self.get1_mut(k1));
+        let p2 = to_r(self.get1_mut(k2));
+        let p2 = check_r(&p1, p2);
+        unsafe { (from_r(p1), from_r(p2)) }
     }
 
     /// Returns three mutable references to three distinct values within
     /// the same collection.
-    /// 
-    /// # Panic
-    /// This function will panic if any two keys point to the same value.
-    fn get3_mut(&mut self, k1: K, k2: K, k3: K) -> (Option<&mut V>, Option<&mut V>, Option<&mut V>) {
-        let p1 = to_ptr(self.get1_mut(k1));
-        let p2 = to_ptr(self.get1_mut(k2));
-        let p3 = to_ptr(self.get1_mut(k3));
-        check_ptr(p1, p2);
-        check_ptr(p1, p3);
-        check_ptr(p2, p3);
-        unsafe { (from_ptr(p1), from_ptr(p2), from_ptr(p3)) }
+    fn get3_mut(&mut self, k1: K, k2: K, k3: K) -> (Result<&mut V, SplitMutError>, 
+        Result<&mut V, SplitMutError>, Result<&mut V, SplitMutError>) {
+
+        let p1 = to_r(self.get1_mut(k1));
+        let p2 = to_r(self.get1_mut(k2));
+        let p3 = to_r(self.get1_mut(k3));
+        let p2 = check_r(&p1, p2);
+        let p3 = check_r(&p1, p3);
+        let p3 = check_r(&p2, p3);
+        unsafe { (from_r(p1), from_r(p2), from_r(p3)) }
     }
 
     /// Returns four mutable references to four distinct values within
     /// the same collection.
-    /// 
-    /// # Panic
-    /// This function will panic if any two keys point to the same value.
-    fn get4_mut(&mut self, k1: K, k2: K, k3: K, k4: K) -> (Option<&mut V>, Option<&mut V>, Option<&mut V>, Option<&mut V>) {
-        let p1 = to_ptr(self.get1_mut(k1));
-        let p2 = to_ptr(self.get1_mut(k2));
-        let p3 = to_ptr(self.get1_mut(k3));
-        let p4 = to_ptr(self.get1_mut(k4));
-        check_ptr(p1, p2);
-        check_ptr(p1, p3);
-        check_ptr(p2, p3);
-        check_ptr(p1, p4);
-        check_ptr(p2, p4);
-        check_ptr(p3, p4);
-        unsafe { (from_ptr(p1), from_ptr(p2), from_ptr(p3), from_ptr(p4)) }
+    fn get4_mut(&mut self, k1: K, k2: K, k3: K, k4: K) -> (Result<&mut V, SplitMutError>,
+        Result<&mut V, SplitMutError>, Result<&mut V, SplitMutError>, Result<&mut V, SplitMutError>) {
+        let p1 = to_r(self.get1_mut(k1));
+        let p2 = to_r(self.get1_mut(k2));
+        let p3 = to_r(self.get1_mut(k3));
+        let p4 = to_r(self.get1_mut(k4));
+        let p2 = check_r(&p1, p2);
+        let p3 = check_r(&p1, p3);
+        let p3 = check_r(&p2, p3);
+        let p4 = check_r(&p1, p4);
+        let p4 = check_r(&p2, p4);
+        let p4 = check_r(&p3, p4);
+        unsafe { (from_r(p1), from_r(p2), from_r(p3), from_r(p4)) }
     }
 
     /// Returns two mutable references to two distinct values within
@@ -168,11 +216,10 @@ impl<'a, K: Ord, V> SplitMut<&'a K, V> for BTreeMap<K, V> {
 }
 
 #[test]
-#[should_panic]
 fn hash_same() {
     let mut h = HashMap::new();
     h.insert(3u8, 5u16);
-    h.get2_mut(&3, &3);
+    assert_eq!(h.get2_mut(&3, &3), (Ok(&mut 5u16), Err(SplitMutError::SameValue)));
 }
 
 #[test]
@@ -183,17 +230,16 @@ fn hash_reg() {
     { let (a, b) = h.get2_mut(&3, &4);
       std::mem::swap(a.unwrap(), b.unwrap());
     }
-    assert_eq!(h.get2_mut(&2, &2), (None, None));
+    assert_eq!(h.get2_mut(&2, &2), (Err(SplitMutError::NoValue), Err(SplitMutError::NoValue)));
     assert_eq!(unsafe { h.get2_unchecked_mut(&3, &4) }, (&mut 9u16, &mut 5u16));
-    assert_eq!(h.get2_mut(&2, &3), (None, Some(&mut 9u16)));
+    assert_eq!(h.get2_mut(&2, &3), (Err(SplitMutError::NoValue), Ok(&mut 9u16)));
 }
 
 #[test]
-#[should_panic]
 fn deque_same() {
     let mut h = VecDeque::new();
     h.push_front(5u16);
-    h.get2_mut(0, 0);
+    assert_eq!(h.get2_mut(0, 0), (Ok(&mut 5u16), Err(SplitMutError::SameValue)));
 }
 
 #[test]
@@ -204,9 +250,9 @@ fn deque_reg() {
     { let (a, b) = h.get2_mut(0, 1);
       std::mem::swap(a.unwrap(), b.unwrap());
     }
-    assert_eq!(h.get2_mut(2, 2), (None, None));
+    assert_eq!(h.get2_mut(2, 2), (Err(SplitMutError::NoValue), Err(SplitMutError::NoValue)));
     assert_eq!(unsafe { h.get2_unchecked_mut(0, 1) }, (&mut 9u16, &mut 5u16));
-    assert_eq!(h.get2_mut(2, 0), (None, Some(&mut 9u16)));
+    assert_eq!(h.get2_mut(2, 0), (Err(SplitMutError::NoValue), Ok(&mut 9u16)));
 }
 
 #[test]

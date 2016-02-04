@@ -3,5 +3,9 @@ name = "splitmut"
 version = "0.1.0"
 authors = ["David Henningsson <diwic@ubuntu.com>"]
 license = "Apache-2.0/MIT"
+description = "Safely retreives multiple mutable values from the same collection."
+keywords = ["mutable", "reference", "mut", "ref"]
+documentation = "http://diwic.github.io/rs-docs/splitmut/index.html"
+repository = "https://github.com/diwic/splitmut-rs"
 
 [dependencies]
