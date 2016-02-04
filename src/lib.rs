@@ -1,7 +1,7 @@
 //! SplitMut - a crate for safely retreiving multiple mutable values within the same collection.
 //!
-//! `get2_mut`, `get3_mut` and `get4_mut` returns a tuple or 2, 3 or 4 values, each one of them being
-//! either `Ok(&mut V)`, `Err(SplitMutError::NoValue)` in case there was no value for the key (i e, when
+//! `get2_mut`, `get3_mut` and `get4_mut` return a tuple or 2, 3 or 4 values, each one of them being
+//! one of `Ok(&mut V)`, `Err(SplitMutError::NoValue)` in case there was no value for the key (i e, when
 //! your usual `get_mut` would have returned `None`), or `Err(SplitMutError::SameValue)` in case the same
 //! value has already been returned earlier in the tuple. 
 //!
