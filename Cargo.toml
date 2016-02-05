@@ -1,6 +1,6 @@
 [package]
 name = "splitmut"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["David Henningsson <diwic@ubuntu.com>"]
 license = "Apache-2.0/MIT"
 description = "Safely retreives multiple mutable values from the same collection."
