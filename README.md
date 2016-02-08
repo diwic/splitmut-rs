@@ -1,6 +1,6 @@
 # SplitMut 
 
-A Rust library for safely retreiving multiple mutable values within the same collection.
+A Rust library for safely retrieving multiple mutable values within the same collection.
 
 [API Documentation](http://diwic.github.io/rs-docs/splitmut/index.html)
 [Crates.io](http://crates.io/crates/splitmut)
