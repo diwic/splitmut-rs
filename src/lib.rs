@@ -36,7 +36,8 @@
 
 #![warn(missing_docs)]
 
-use std::collections::{HashMap, BTreeMap, VecDeque};
+use std::collections::{HashMap, BTreeMap, HashSet, VecDeque};
+use std::marker::PhantomData;
 
 /// Error returned from get*_mut functions.
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
@@ -140,6 +141,11 @@ pub trait SplitMut<K, V> {
         unsafe { (from_r(p1), from_r(p2), from_r(p3), from_r(p4)) }
     }
 
+    /// Returns any number mutable references to distinct values within
+    /// the same collection. A HashSet is used internally to keep track
+    /// of values already returned.
+    fn get_muts(&mut self) -> GetMuts<K, V, Self> { GetMuts(self, HashSet::new(), PhantomData) }
+
     /// Returns two mutable references to two distinct values within
     /// the same collection.
     /// 
@@ -177,6 +183,22 @@ pub trait SplitMut<K, V> {
         let p3 = self.get1_unchecked_mut(k3) as *mut V;
         let p4 = self.get1_unchecked_mut(k4) as *mut V;
         (self.get1_unchecked_mut(k1), &mut *p2, &mut *p3, &mut *p4)
+    }
+}
+
+/// Wrapper struct for the get_muts function. 
+pub struct GetMuts<'a, K, V, A: 'a + SplitMut<K, V> + ?Sized>(&'a mut A, HashSet<*mut V>, PhantomData<*const K>);
+
+impl<'a, K, V, A: 'a + SplitMut<K, V> + ?Sized> GetMuts<'a, K, V, A> {
+    /// Returns a mutable reference with the same lifetime as the
+    /// original collection, i e, it allows several distinct mutable references to
+    /// be alive simultaneously.
+    ///
+    /// It returnes an error if the value does not exist or has already been returned.
+    pub fn at(&mut self, k: K) -> Result<&'a mut V, SplitMutError> {
+        let p = try!(to_r(self.0.get1_mut(k)));
+        if !self.1.insert(p) { return Err(SplitMutError::SameValue) };
+        Ok(unsafe { &mut *p })
     }
 }
 
@@ -264,4 +286,15 @@ fn vec() {
     }
     assert_eq!(&*h, &["world", "Hello", "universe"]);
 
+    {
+        let mut z = h.get_muts();
+        let a = z.at(0);
+        let b = z.at(1);
+        assert_eq!(a, Ok(&mut "world"));
+        assert_eq!(b, Ok(&mut "Hello"));
+        std::mem::swap(a.unwrap(), b.unwrap());
+        assert_eq!(z.at(0), Err(SplitMutError::SameValue));
+        assert_eq!(z.at(3), Err(SplitMutError::NoValue));
+    }
+    assert_eq!(&*h, &["Hello", "world", "universe"]);
 }
