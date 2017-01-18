@@ -38,6 +38,7 @@
 
 use std::collections::{HashMap, BTreeMap, HashSet, VecDeque};
 use std::marker::PhantomData;
+use std::{hash, borrow};
 
 /// Error returned from get*_mut functions.
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
@@ -148,6 +149,9 @@ pub unsafe trait SplitMut<K, V> {
     /// of values already returned.
     fn get_muts(&mut self) -> GetMuts<K, V, Self> { GetMuts(self, HashSet::new(), PhantomData) }
 
+    /// Returns an iterator adapter that maps from a K to a Result<V, SplitMutError>
+    fn get_mut_iter<I: Iterator<Item=K>>(&mut self, i: I) -> GetMutIter<K, V, Self, I> { GetMutIter(self.get_muts(), i) }
+
     /// Returns two mutable references to two distinct values within
     /// the same collection.
     /// 
@@ -204,6 +208,18 @@ impl<'a, K, V, A: 'a + SplitMut<K, V> + ?Sized> GetMuts<'a, K, V, A> {
     }
 }
 
+
+/// Wrapper struct for the get_mut_iter function. 
+pub struct GetMutIter<'a, K, V, A: 'a + SplitMut<K, V> + ?Sized, I>(GetMuts<'a, K, V, A>, I);
+
+impl<'a, K, V: 'a, A: 'a + SplitMut<K, V> + ?Sized, I: Iterator<Item=K>> Iterator for GetMutIter<'a, K, V, A, I> {
+    type Item = Result<&'a mut V, SplitMutError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.1.next().map(|k| self.0.at(k))
+    }
+}
+
+
 unsafe impl<'a, V> SplitMut<usize, V> for &'a mut [V] {
     #[inline]
     fn get1_mut(&mut self, k: usize) -> Option<&mut V> { self.get_mut(k) }
@@ -225,18 +241,18 @@ unsafe impl<'a, V> SplitMut<usize, V> for VecDeque<V> {
     unsafe fn get1_unchecked_mut(&mut self, k: usize) -> &mut V { std::mem::transmute(self.get_mut(k)) }
 }
 
-unsafe impl<'a, K: std::hash::Hash + Eq, V> SplitMut<&'a K, V> for HashMap<K, V> {
+unsafe impl<'a, K: hash::Hash + Eq + borrow::Borrow<Q>, Q: hash::Hash + Eq + ?Sized, V> SplitMut<&'a Q, V> for HashMap<K, V> {
     #[inline]
-    fn get1_mut(&mut self, k: &'a K) -> Option<&mut V> { self.get_mut(k) }
+    fn get1_mut(&mut self, k: &'a Q) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
-    unsafe fn get1_unchecked_mut(&mut self, k: &'a K) -> &mut V { std::mem::transmute(self.get_mut(k)) }
+    unsafe fn get1_unchecked_mut(&mut self, k: &'a Q) -> &mut V { std::mem::transmute(self.get_mut(k)) }
 }
 
-unsafe impl<'a, K: Ord, V> SplitMut<&'a K, V> for BTreeMap<K, V> {
+unsafe impl<'a, K: Ord + borrow::Borrow<Q>, Q: Ord + ?Sized, V> SplitMut<&'a Q, V> for BTreeMap<K, V> {
     #[inline]
-    fn get1_mut(&mut self, k: &'a K) -> Option<&mut V> { self.get_mut(k) }
+    fn get1_mut(&mut self, k: &'a Q) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
-    unsafe fn get1_unchecked_mut(&mut self, k: &'a K) -> &mut V { std::mem::transmute(self.get_mut(k)) }
+    unsafe fn get1_unchecked_mut(&mut self, k: &'a Q) -> &mut V { std::mem::transmute(self.get_mut(k)) }
 }
 
 #[test]
@@ -257,6 +273,16 @@ fn hash_reg() {
     assert_eq!(h.get2_mut(&2, &2), (Err(SplitMutError::NoValue), Err(SplitMutError::NoValue)));
     assert_eq!(unsafe { h.get2_unchecked_mut(&3, &4) }, (&mut 9u16, &mut 5u16));
     assert_eq!(h.get2_mut(&2, &3), (Err(SplitMutError::NoValue), Ok(&mut 9u16)));
+}
+
+#[test]
+fn tree_borrow() {
+    let mut h = BTreeMap::new();
+    h.insert(String::from("borrow"), 1);   
+    h.insert(String::from("me"), 2);
+    let slice = ["me", "borrow", "me"];
+    let z: Vec<_> = h.get_mut_iter(slice.into_iter().map(|&k| k)).collect();
+    assert_eq!(&*z, [Ok(&mut 2), Ok(&mut 1), Err(SplitMutError::SameValue)]);
 }
 
 #[test]
