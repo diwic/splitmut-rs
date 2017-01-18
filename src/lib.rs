@@ -90,8 +90,10 @@ unsafe fn from_r<'a, V>(a: R<V>) -> Result<&'a mut V, SplitMutError> { a.map(|aa
 ///
 /// In case you want to implement `SplitMut` for your own collection, just
 /// implement `get1_mut` and `get1_unchecked_mut` and the other methods will
-/// be provided for you.
-pub trait SplitMut<K, V> {
+/// be provided for you. If you do so, you must make sure that these functions
+/// do not mutate your collection in ways that would invalidate previously returned
+/// values from `get1_mut` and `get1_unchecked_mut`.
+pub unsafe trait SplitMut<K, V> {
     /// Wrapper for get_mut, used internally.
     fn get1_mut(&mut self, k1: K) -> Option<&mut V>;
     /// Wrapper for get_unchecked_mut, used internally.
@@ -202,35 +204,35 @@ impl<'a, K, V, A: 'a + SplitMut<K, V> + ?Sized> GetMuts<'a, K, V, A> {
     }
 }
 
-impl<'a, V> SplitMut<usize, V> for &'a mut [V] {
+unsafe impl<'a, V> SplitMut<usize, V> for &'a mut [V] {
     #[inline]
     fn get1_mut(&mut self, k: usize) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
     unsafe fn get1_unchecked_mut(&mut self, k: usize) -> &mut V { self.get_unchecked_mut(k) }
 }
 
-impl<'a, V> SplitMut<usize, V> for Vec<V> {
+unsafe impl<'a, V> SplitMut<usize, V> for Vec<V> {
     #[inline]
     fn get1_mut(&mut self, k: usize) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
     unsafe fn get1_unchecked_mut(&mut self, k: usize) -> &mut V { self.get_unchecked_mut(k) }
 }
 
-impl<'a, V> SplitMut<usize, V> for VecDeque<V> {
+unsafe impl<'a, V> SplitMut<usize, V> for VecDeque<V> {
     #[inline]
     fn get1_mut(&mut self, k: usize) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
     unsafe fn get1_unchecked_mut(&mut self, k: usize) -> &mut V { std::mem::transmute(self.get_mut(k)) }
 }
 
-impl<'a, K: std::hash::Hash + Eq, V> SplitMut<&'a K, V> for HashMap<K, V> {
+unsafe impl<'a, K: std::hash::Hash + Eq, V> SplitMut<&'a K, V> for HashMap<K, V> {
     #[inline]
     fn get1_mut(&mut self, k: &'a K) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
     unsafe fn get1_unchecked_mut(&mut self, k: &'a K) -> &mut V { std::mem::transmute(self.get_mut(k)) }
 }
 
-impl<'a, K: Ord, V> SplitMut<&'a K, V> for BTreeMap<K, V> {
+unsafe impl<'a, K: Ord, V> SplitMut<&'a K, V> for BTreeMap<K, V> {
     #[inline]
     fn get1_mut(&mut self, k: &'a K) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
