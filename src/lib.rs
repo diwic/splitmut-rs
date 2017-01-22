@@ -5,11 +5,14 @@
 //! your usual `get_mut` would have returned `None`), or `Err(SplitMutError::SameValue)` in case the same
 //! value has already been returned earlier in the tuple. 
 //!
+//! If you need more than four values, you can use `get_muts` or `get_mut_iter` to get as many mutable
+//! values as you like.
+//!
 //! # Example
 //! ```
 //! use std::collections::HashMap;
 //! use splitmut::{SplitMut, SplitMutError};
-//! 
+//!
 //! // Create a hashmap
 //! let mut h = HashMap::new();
 //! h.insert(1, "Hello");
@@ -147,9 +150,35 @@ pub unsafe trait SplitMut<K, V> {
     /// Returns any number mutable references to distinct values within
     /// the same collection. A HashSet is used internally to keep track
     /// of values already returned.
+    ///
+    /// # Example
+    /// ```
+    /// use splitmut::SplitMut;
+    ///
+    /// let mut h = vec!["Hello", "world", "!"];
+    /// let mut z = h.get_muts();
+    /// let a = z.at(0);
+    /// let b = z.at(1);
+    /// assert_eq!(a, Ok(&mut "Hello"));
+    /// assert_eq!(b, Ok(&mut "world"));
+    /// ```
     fn get_muts(&mut self) -> GetMuts<K, V, Self> { GetMuts(self, HashSet::new(), PhantomData) }
 
-    /// Returns an iterator adapter that maps from a K to a Result<V, SplitMutError>
+    /// Returns an iterator adapter that maps from a K to a Result<V, SplitMutError>.
+    /// A HashSet is used internally to keep track of values already returned.
+    ///
+    /// # Example
+    /// ```
+    /// use std::collections::BTreeMap;
+    /// use splitmut::{SplitMut, SplitMutError};
+    ///
+    /// let mut h = BTreeMap::new();
+    /// h.insert(String::from("borrow"), 1);   
+    /// h.insert(String::from("me"), 2);
+    /// let slice = ["me", "borrow", "me"];
+    /// let z: Vec<_> = h.get_mut_iter(slice.into_iter().map(|&k| k)).collect();
+    /// assert_eq!(&*z, [Ok(&mut 2), Ok(&mut 1), Err(SplitMutError::SameValue)]);
+    /// ```
     fn get_mut_iter<I: Iterator<Item=K>>(&mut self, i: I) -> GetMutIter<K, V, Self, I> { GetMutIter(self.get_muts(), i) }
 
     /// Returns two mutable references to two distinct values within
