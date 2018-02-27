@@ -270,7 +270,7 @@ unsafe impl<'a, V> SplitMut<usize, V> for VecDeque<V> {
     unsafe fn get1_unchecked_mut(&mut self, k: usize) -> &mut V { std::mem::transmute(self.get_mut(k)) }
 }
 
-unsafe impl<'a, K: hash::Hash + Eq + borrow::Borrow<Q>, Q: hash::Hash + Eq + ?Sized, V> SplitMut<&'a Q, V> for HashMap<K, V> {
+unsafe impl<'a, K: hash::Hash + Eq + borrow::Borrow<Q>, Q: hash::Hash + Eq + ?Sized, V, S: hash::BuildHasher> SplitMut<&'a Q, V> for HashMap<K, V, S> {
     #[inline]
     fn get1_mut(&mut self, k: &'a Q) -> Option<&mut V> { self.get_mut(k) }
     #[inline]
